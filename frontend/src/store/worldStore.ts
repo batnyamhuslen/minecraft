@@ -16,7 +16,7 @@ import {
   TERRAIN_SEED,
   createWorldNoise,
 } from '../engine/world'
-import { fetchChunk, saveChunk } from '../api/chunks'
+import { fetchChunk, saveChunk, saveChunkSync } from '../api/chunks'
 
 /**
  * worldStore
@@ -153,6 +153,32 @@ function flushSave(key: string): void {
  * placeholder in place. Always decrements `pendingCount` regardless of
  * outcome so the indicator can't get stuck.
  */
+/**
+ * Flush every chunk that has a pending debounce save immediately, using the
+ * sync `sendBeacon`/keepalive path. Designed to run on `beforeunload` /
+ * `pagehide` / `visibilitychange(hidden)` so that edits made within the 1s
+ * debounce window are not dropped when the tab/browser/refresh tears the page
+ * down (which would otherwise cancel the pending `setTimeout` before it fires).
+ *
+ * This mirrors the per-chunk flush we already do when a chunk leaves the render
+ * window — it just runs for ALL dirty chunks at once, on page teardown. Safe
+ * to call repeatedly: it clears each timer then removes it from `dirtyTimers`.
+ */
+export function flushAllSaves(): void {
+  if (dirtyTimers.size === 0) return
+  // Snapshot the keys first — flushSave mutates `dirtyTimers` during iteration.
+  for (const key of Array.from(dirtyTimers.keys())) {
+    const timer = dirtyTimers.get(key)
+    if (timer !== undefined) clearTimeout(timer)
+    dirtyTimers.delete(key)
+
+    const [chunkX, chunkZ] = parseChunkKey(key)
+    const chunk = useWorldStore.getState().chunks.get(key)
+    if (!chunk) continue // already unloaded
+    saveChunkSync(WORLD_ID, chunkX, chunkZ, chunk.data)
+  }
+}
+
 async function loadChunk(chunkX: number, chunkZ: number): Promise<void> {
   const key = chunkKey(chunkX, chunkZ)
   let bytes: Uint8Array | null

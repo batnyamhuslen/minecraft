@@ -70,3 +70,58 @@ export async function saveChunk(
   })
   if (!res.ok) throw new Error(`saveChunk: HTTP ${res.status}`)
 }
+
+/**
+ * Best-effort fire-and-forget save for use on page unload / tab hide. Uses the
+ * browser's `sendBeacon` (or `fetch` with `keepalive: true` on browsers that
+ * don't expose it / for the cross-browser fallback) so the request can survive
+ * the page being torn down. Unlike `saveChunk` this never awaits and never
+ * rejects — the page is going away so there's nothing meaningful to do on
+ * failure beyond a `console.warn`.
+ *
+ * sendBeacon has a small max payload cap (~64KB on most user agents) but a chunk
+ * is 4096 bytes, and we may send a few at once — still well under the cap.
+ *
+ * Note: sendBeacon uses the GET-unsafe POST method and inherits the same
+ * octet-stream body the regular endpoint expects, so the backend needs no
+ * changes.
+ */
+export function saveChunkSync(
+  worldId: string,
+  chunkX: number,
+  chunkZ: number,
+  data: Uint8Array,
+): void {
+  const url = chunkUrl(worldId, chunkX, chunkZ)
+  // Copy the bytes into a fresh ArrayBuffer-backed Uint8Array so the Blob
+  // doesn't retain a SharedArrayBuffer-typed view (which Blob rejects in some
+  // browser builds).
+  const copy = new Uint8Array(data.byteLength)
+  copy.set(data)
+  const blob = new Blob([copy], { type: 'application/octet-stream' })
+
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      if (navigator.sendBeacon(url, blob)) return
+      // sendBeacon returning false usually means the queue is full / payload
+      // too large; fall through to keepalive fetch.
+    }
+  } catch (err) {
+    console.warn('saveChunkSync sendBeacon threw', { chunkX, chunkZ, err })
+  }
+
+  // Fallback: a keepalive fetch. The browser will still send it after unload
+  // for small bodies (<= 64KB). If that also unsupported we lose the save, but
+  // better than crashing.
+  try {
+    void fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: blob,
+      keepalive: true,
+    // No .then — we don't inspect the response once the page is going away.
+    }).catch(() => {})
+  } catch (err) {
+    console.warn('saveChunkSync keepalive fetch threw', { chunkX, chunkZ, err })
+  }
+}
