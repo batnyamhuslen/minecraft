@@ -1,0 +1,19 @@
+{
+  "name": "minecraft-fullstack",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n frontend,backend \"npm:dev:frontend\" \"npm:dev:backend\"",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "mvn -f minecraft-backend/pom.xml spring-boot:run",
+    "dev:frontend:only": "npm --prefix frontend run dev",
+    "dev:backend:only": "mvn -f minecraft-backend/pom.xml spring-boot:run",
+    "build": "npm --prefix frontend run build",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "install:all": "npm install --prefix frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

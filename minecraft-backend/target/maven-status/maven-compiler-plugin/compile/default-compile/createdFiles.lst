@@ -1,0 +1,4 @@
+com\voxel\backend\entity\ChunkEntity.class
+com\voxel\backend\repository\ChunkRepository.class
+com\voxel\backend\VoxelBackendApplication.class
+com\voxel\backend\controller\ChunkController.class
