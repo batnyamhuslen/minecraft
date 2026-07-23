@@ -1,6 +1,7 @@
 import { BLOCKS } from '../engine/blocks'
 import { useInventoryStore } from '../store/inventoryStore'
 import { useHotbarKeys } from '../hooks/useHotbarKeys'
+import { useHotbarScroll } from '../hooks/useHotbarScroll'
 
 /**
  * Hotbar
@@ -16,6 +17,7 @@ import { useHotbarKeys } from '../hooks/useHotbarKeys'
  */
 export default function Hotbar() {
   useHotbarKeys()
+  useHotbarScroll()
   const hotbarTypes = useInventoryStore((s) => s.hotbarTypes)
   const selectedBlockType = useInventoryStore((s) => s.selectedBlockType)
 

@@ -17,7 +17,10 @@ interface PlayerState {
 }
 
 export const usePlayerStore = create<PlayerState>((set) => ({
-  position: [0, 14, 28],
+  // Spawn mirror — EYE position (feet at ~18.4). Gravity in FirstPerson drops
+  // the player onto the surface on the first frame; this is just the initial
+  // wired value HUD/tests may read before the first useFrame fires.
+  position: [0, 20, 24],
   speed: 5,
   setPosition: (position) => set({ position }),
 }))

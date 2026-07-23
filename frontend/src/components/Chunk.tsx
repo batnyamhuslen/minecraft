@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { useWorldStore } from '../store/worldStore'
 import { CHUNK_SIZE, getBlock } from '../engine/chunk'
 import { getWorldBlock } from '../engine/world'
-import { blockColor, isSolid } from '../engine/blocks'
+import { blockColor, isSolid, isDecorative } from '../engine/blocks'
 
 /**
  * Chunk
@@ -59,9 +59,12 @@ export default function Chunk({ chunkX, chunkZ }: ChunkProps) {
   const key = `${chunkX},${chunkZ}`
   const chunk = useWorldStore((s) => s.chunks.get(key))
   const meshRef = useRef<THREE.InstancedMesh>(null)
+  const decorMeshRef = useRef<THREE.InstancedMesh>(null)
 
   // Geometry is a unit cube. Material base color is white so the per-instance
-  // color passes through unchanged (three multiplies them).
+  // color passes through unchanged (three multiplies them). Both meshes below
+  // SHARE this geometry + material to keep GPU memory tight (one cube, one
+  // material per chunk, not two).
   const geometry = useMemo(() => new THREE.BoxGeometry(1, 1, 1), [])
   const material = useMemo(
     () => new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0 }),
@@ -80,13 +83,24 @@ export default function Chunk({ chunkX, chunkZ }: ChunkProps) {
     }
   }, [geometry, material])
 
-  // Capacity (uncapped solid count in this chunk). The actual visible count is
-  // computed in the effect below via neighbour culling; mesh.count clamps drawn
-  // instances to that visible count.
+  // Capacity = solid (collidable/opaque) blocks in this chunk. The actual
+  // visible count is computed in the effect below via neighbour culling;
+  // mesh.count clamps drawn instances to that visible count. Decorative
+  // blocks (flowers, tall grass, clouds) are rendered in a SEPARATE mesh
+  // below so they don't cast shadows (clouds casting blocky shadows under
+  // themselves would look wrong).
   const solidCount = useMemo(() => {
     if (!chunk) return 0
     let n = 0
     for (let i = 0; i < chunk.data.length; i++) if (isSolid(chunk.data[i])) n++
+    return n
+  }, [chunk])
+
+  // Capacity for the decorative-only mesh (flowers, tall grass, clouds).
+  const decorCount = useMemo(() => {
+    if (!chunk) return 0
+    let n = 0
+    for (let i = 0; i < chunk.data.length; i++) if (isDecorative(chunk.data[i])) n++
     return n
   }, [chunk])
 
@@ -108,7 +122,7 @@ export default function Chunk({ chunkX, chunkZ }: ChunkProps) {
       for (let lz = 0; lz < CHUNK_SIZE; lz++) {
         for (let lx = 0; lx < CHUNK_SIZE; lx++) {
           const id = getBlock(chunk, lx, ly, lz)
-          if (!isSolid(id)) continue
+          if (!isSolid(id)) continue // decorative blocks handled by the decor mesh
 
           // World voxel coords for this local voxel + its 6 world neighbours.
           const wx = chunkX * CHUNK_SIZE + lx
@@ -148,15 +162,52 @@ export default function Chunk({ chunkX, chunkZ }: ChunkProps) {
     )
   }, [chunk, solidCount, chunkX, chunkZ])
 
+  // Populate the decorative-only mesh (flowers, tall grass, clouds). These
+  // blocks are sparse, never collide, and we skip the neighbour-culling pass:
+  // every decorative cell is rendered as-is (a flower sitting on grass is
+  // open to air on all sides anyway, and clouds float in clear sky). One
+  // simple counted loop is all the perf this needs.
+  useLayoutEffect(() => {
+    const mesh = decorMeshRef.current
+    if (!mesh || !chunk) return
+    let inst = 0
+    for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+      for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+          const id = getBlock(chunk, lx, ly, lz)
+          if (!isDecorative(id)) continue
+          TEMP_MATRIX.makeTranslation(lx + 0.5, ly + 0.5, lz + 0.5)
+          mesh.setMatrixAt(inst, TEMP_MATRIX)
+          TEMP_COLOR.copy(blockColor(id))
+          mesh.setColorAt(inst, TEMP_COLOR)
+          inst++
+        }
+      }
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    mesh.count = inst
+  }, [chunk, decorCount, chunkX, chunkZ])
+
   if (!chunk) return null
 
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[geometry, material, Math.max(solidCount, 1)]}
-      position={[chunkX * CHUNK_SIZE, 0, chunkZ * CHUNK_SIZE]}
-      castShadow
-      receiveShadow
-    />
+    <>
+      <instancedMesh
+        ref={meshRef}
+        args={[geometry, material, Math.max(solidCount, 1)]}
+        position={[chunkX * CHUNK_SIZE, 0, chunkZ * CHUNK_SIZE]}
+        castShadow
+        receiveShadow
+      />
+      {/* Decorative overlay: flowers, tall grass, clouds. Same geometry +
+          material as the solid mesh (shared), but with shadows disabled so
+          clouds don't drop hard square shadows on the terrain below. */}
+      <instancedMesh
+        ref={decorMeshRef}
+        args={[geometry, material, Math.max(decorCount, 1)]}
+        position={[chunkX * CHUNK_SIZE, 0, chunkZ * CHUNK_SIZE]}
+      />
+    </>
   )
 }

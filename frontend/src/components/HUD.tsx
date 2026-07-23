@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Hotbar from './Hotbar'
 import InventoryPanel from './InventoryPanel'
+import FpsCounter from './FpsCounter'
 import { useInventoryToggle } from '../hooks/useInventoryToggle'
 import { useUIStore } from '../store/uiStore'
 import { useWorldStore } from '../store/worldStore'
@@ -57,6 +58,10 @@ export default function HUD() {
           }}
         />
       </div>
+
+      {/* Top-left FPS overlay. The ChunkFetchIndicator is positioned just below
+          this (top: 44) so the two overlays stack without overlap. */}
+      <FpsCounter />
 
       {/* Click-to-play hint overlay until the user locks the pointer.
             Hidden while the inventory panel is open so the two overlays
@@ -130,8 +135,10 @@ function ChunkFetchIndicator() {
   return (
     <div
       style={{
+        // Stacked below the FPS counter (which is at top:12, ~24px tall) so
+        // the two top-left overlays don't overlap when both are visible.
         position: 'absolute',
-        top: 12,
+        top: 44,
         left: 12,
         padding: '6px 10px',
         background: 'rgba(0,0,0,0.45)',

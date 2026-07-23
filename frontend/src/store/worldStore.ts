@@ -55,8 +55,28 @@ import { fetchChunk, saveChunk, saveChunkSync } from '../api/chunks'
  * some chunks may still refresh from the backend.
  */
 
-/** Render distance in chunks (3 → 7×7 window around the player). */
-export const RENDER_DISTANCE = 3
+/**
+ * Render distance in chunks. The world is unbounded; only the (2R+1)² square
+ * of chunks centred on the player's current chunk is loaded at any time.
+ *
+ * Tuning notes (kept here so we can scale this against measured perf):
+ *   - R=3 (historic default): 7×7 = 49 chunks. Trivially cheap on any GPU.
+ *   - R=6: 13×13 = 169 chunks. ~35k vertex instances / ~170 draw calls. Any
+ *     modern GPU should hold 60fps; main cost becomes fill rate on closer
+ *     trees and per-frame raycast length.
+ *   - R=7 (CURRENT): 15×15 = 225 chunks. ~50k instances / ~230 draw calls.
+ *     Still well inside three.js's draw-call budget on integrated GPUs.
+ *   - R=8: 17×17 = 289 chunks. ~60k instances / ~290 draw calls. At this
+ *     scale the per-chunk-border sync generation hitch starts to matter —
+ *     fast traversal or spawn can drop a frame on weaker CPUs because every
+ *     newly-in-range chunk is generated in ONE synchronous set() call.
+ *
+ * The fog far edge in <Scene> scales with this constant (far = RENDER_DISTANCE
+ * * 16), so the haze boundary always matches the loaded window. The dynamic
+ * load/unload path (updateLoadedChunks + the Chunk.tsx GPU-dispose cleanup)
+ * scales linearly with R and needs no per-R tuning.
+ */
+export const RENDER_DISTANCE = 7
 
 /** World identifier sent to the backend. Hardcoded for now; swap for a
  *  per-save / per-session value once multi-world support is needed. */

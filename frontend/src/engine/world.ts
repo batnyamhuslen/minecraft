@@ -1,7 +1,16 @@
 import type { ChunkData } from './chunk'
 import { CHUNK_SIZE, getBlock as getChunkBlock, createChunk } from './chunk'
 import { AIR } from './blocks'
-import { createWorldNoise, fillChunkTerrain, TERRAIN_SEED } from './terrain'
+import type { Noise2D } from './terrain'
+import {
+  createWorldNoise,
+  createWorldMoisture,
+  createWorldCloudNoise,
+  fillChunkTerrain,
+  decorateChunk,
+  generateClouds,
+  TERRAIN_SEED,
+} from './terrain'
 
 /**
  * world.ts
@@ -47,9 +56,17 @@ export function worldToLocal(worldX: number, chunkX: number): number {
 }
 
 /**
- * Generate ONE chunk at a given chunk coordinate, terrain-filled, using the
- * shared noise function. Same (chunkX, chunkZ, noise) → identical output every
- * time, so chunks regenerate identically when the player returns.
+ * Generate ONE chunk at a given chunk coordinate, fully decorated, using the
+ * shared noises. Same (chunkX, chunkZ, noises) → identical output every time,
+ * so chunks regenerate identically when the player returns.
+ *
+ * Order matters: surface+beaches first (fillChunkTerrain), then trees/flowers
+ * (decorateChunk — needs the surface type to skip sand), then clouds at the
+ * high Y layer. Because each pass only writes to previously-empty cells (and
+ * clouds live at Y=15, well above trees whose canopy caps at most Y=15 too —
+ * rare collisions on a single column are tolerated: cloud simply overwrites
+ * the leaf cap), there are no ordering hazards. Every chunk goes through this
+ * pipeline — initial spawn AND dynamic load — so decoration is consistent.
  */
 export function generateChunkAt(
   chunkX: number,
@@ -57,7 +74,10 @@ export function generateChunkAt(
   noise2D: ReturnType<typeof createWorldNoise>,
 ): ChunkData {
   const chunk = createChunk()
-  return fillChunkTerrain(chunk, chunkX, chunkZ, noise2D)
+  fillChunkTerrain(chunk, chunkX, chunkZ, noise2D, worldMoisture)
+  decorateChunk(chunk, chunkX, chunkZ, noise2D, worldMoisture)
+  generateClouds(chunk, chunkX, chunkZ, worldCloud)
+  return chunk
 }
 
 /** Look up a block by WORLD voxel coords. Returns AIR for any voxel whose chunk
@@ -79,4 +99,14 @@ export function getWorldBlock(
   return getChunkBlock(chunk, lx, wy, lz)
 }
 
-export { createChunk, CHUNK_SIZE, AIR, TERRAIN_SEED, createWorldNoise }
+export { createChunk, CHUNK_SIZE, AIR, TERRAIN_SEED, createWorldNoise, createWorldMoisture, createWorldCloudNoise }
+
+/**
+ * Shared secondary noise fields for the whole world. Built once at module
+ * load (like the worldStore's worldNoise) and used by generateChunkAt so that
+ * every chunk — initial and dynamically loaded — decorates consistently.
+ * Their seeds are derived from TERRAIN_SEED so the world is still a function
+ * of the single canonical seed.
+ */
+const worldMoisture: Noise2D = createWorldMoisture()
+const worldCloud: Noise2D = createWorldCloudNoise()

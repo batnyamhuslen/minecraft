@@ -5,6 +5,7 @@ import World from './World'
 import ChunkManager from './ChunkManager'
 import BlockHighlight from './BlockHighlight'
 import PlayerActions from './PlayerActions'
+import HeldItem from './HeldItem'
 import { RENDER_DISTANCE } from '../store/worldStore'
 
 /**
@@ -32,7 +33,7 @@ export default function Scene() {
   // player as they move, governed by ChunkManager + RENDER_DISTANCE.
   return (
     <Canvas
-      camera={{ fov: 75, near: 0.1, far: 1000, position: [0, 14, 24] }}
+      camera={{ fov: 75, near: 0.1, far: 1000, position: [0, 20, 24] }}
       gl={{ antialias: true }}
       flat
       shadows
@@ -73,7 +74,13 @@ export default function Scene() {
       {/* Listen for left/right-click to break/place blocks (DOM listeners). */}
       <PlayerActions />
 
-      {/* FPS movement: WASD on the XZ plane, fixed eye height (no gravity). */}
+      {/* First-person held-item overlay: small cube parented to the camera,
+          reactively coloured by the selected hotbar slot, swings on click. */}
+      <HeldItem />
+
+      {/* FPS movement: WASD on the XZ plane + gravity/jump with per-axis
+          AABB collision against the voxel grid. Camera Y follows the
+          player's feet + EYE_HEIGHT instead of a fixed plane. */}
       <FirstPerson />
 
       {/* Pointer lock first-person look. We attach it as a sibling so it
